@@ -1,0 +1,104 @@
+
+__constant float lookup[(2 * FILTER_WINDOW + 1)* (2 * FILTER_WINDOW + 1)] = {MASK};    // precomputed table (in constant memory).
+
+ float func(int idx) {
+  return(lookup[idx]);
+}
+__constant sampler_t sampler_scale = CLK_NORMALIZED_COORDS_TRUE | CLK_ADDRESS_CLAMP | CLK_FILTER_LINEAR;
+//__constant sampler_t sampler_scale2 = CLK_NORMALIZED_COORDS_TRUE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+__constant sampler_t sampler2 = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE |  CLK_FILTER_NEAREST;
+
+/*
+__kernel void scaleKernel(__read_only image2d_t in, __write_only image2d_t out){
+
+    int2 outputXY =(int2)(get_global_id(0),get_global_id(1));
+    
+    float2 sourceNormalXY =  convert_float2(outputXY) * (float2)(WNF, HNF);
+    uint4 pixel = read_imageui(in,  sampler_scale, sourceNormalXY);
+   write_imageui(out,   outputXY, pixel);
+
+}
+*/
+
+__kernel void scaleKernel_f(__read_only image2d_t in, __write_only image2d_t out){
+
+    int2 outputXY =(int2)(get_global_id(0),get_global_id(1));
+    
+    float2 sourceNormalXY =  convert_float2(outputXY) * (float2)(WNF, HNF);
+    float4 pixel = read_imagef(in,  sampler_scale, sourceNormalXY);
+   write_imagef(out,   outputXY, pixel);
+
+}
+
+
+
+__kernel void blurKernel(__read_only image2d_t in, __write_only image2d_t out){
+
+	int outputX = get_global_id(0);
+	int outputY = get_global_id(1);
+
+	 float4 pixel =(float4)(0.0f);
+		
+
+
+	for (int y = -FILTER_WINDOW; y <= FILTER_WINDOW; y++) {
+		for (int x = -FILTER_WINDOW; x <= FILTER_WINDOW; x++) {
+			pixel += func((x + FILTER_WINDOW) + (y + FILTER_WINDOW) * (FILTER_WINDOW * 2 + 1))* read_imagef(in, sampler2, (int2)(outputX, outputY) +(int2)(x, y));
+			
+		if(DEVICE_TYPE==1){
+			barrier(CLK_LOCAL_MEM_FENCE );
+					}
+		}
+	
+	}
+	/*
+	if(outputY<2){
+		//printf("pix4 = %2.2v4hlf\n", pixel);
+		printf("pix = %f", pixel);
+		printf("\n");
+	}
+	*/
+	 //uint4 pixel2=convert_uint4(pixel);
+	write_imagef (out, (int2)(outputX, outputY),pixel);
+
+}
+
+
+const sampler_t smp = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+void kernel copy(__read_only image2d_t in, __write_only image2d_t out)
+{
+	int x = get_global_id(0);
+	int y = get_global_id(1);
+	int2 pos = (int2)(x, y);
+	float4 pixel = read_imagef(in, smp,pos);
+	
+	int w= get_image_width( in);
+	int h = get_image_height(in);
+
+			if(y<2){
+			//printf("pix4 = %2.2v4hlf\n", pixel);
+			printf("pix = %f", pixel);
+		printf("\n");
+}
+
+	write_imagef (out, (int2)pos,pixel);
+}
+
+__kernel void gaussian_blur(
+	__read_only image2d_t image,
+	__write_only image2d_t blurredImage
+) {
+
+	const int2 pos = { get_global_id(0), get_global_id(1) };
+
+	// Collect neighbor values and multiply with Gaussian
+	float sum = 0.0f;
+	for (int a = -FILTER_WINDOW; a < FILTER_WINDOW + 1; a++) {
+		for (int b = -FILTER_WINDOW; b < FILTER_WINDOW + 1; b++) {
+			sum += func((a + FILTER_WINDOW) + (b + FILTER_WINDOW) * (FILTER_WINDOW * 2 + 1))
+				* read_imagef(image, sampler2, pos + (int2)(a, b)).x;
+		}
+	}
+	write_imagef(blurredImage, (int2)pos, sum);
+
+}
